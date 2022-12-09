@@ -2,3 +2,14 @@ node_modules/
 /test-results/
 /playwright-report/
 /playwright/.cache/
+imágenes/
+tests/
+tests-examples/
+package-lock.json
+package.json
+/Scraper/dist
+/Scraper/venv
+/Scraper/initialzer.py
+/Scraper/prueba.py
+/Scraper/test.js
+/Scraper/*.exe

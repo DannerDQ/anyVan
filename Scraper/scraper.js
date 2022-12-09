@@ -1,7 +1,8 @@
-const { chromium, expect } = require("@playwright/test");
 const { login } = require("./login");
 const fs = require("fs/promises");
 const oldData = require("./oldData.json");
+
+let i = 144;
 
 async function write(data) {
   try {
@@ -10,57 +11,134 @@ async function write(data) {
       flag: "w",
     });
   } catch (e) {
-    console.log(e);
+    fetch("http://127.0.0.1:1000/error", { method: "POST" });
   }
 }
 
-(async () => {
+async function viewForNew() {
   const { chrome, AnyVan } = await login();
 
-  await AnyVan.goto("https://anyvan.com/dashboard#listing-book-now");
-  await AnyVan.waitForTimeout(10000);
+  while (i > 0) {
+    i--;
+    await AnyVan.goto("https://anyvan.com/dashboard#listing-book-now", {
+      timeout: 60000,
+    });
+    await AnyVan.waitForTimeout(9000);
+    const table =
+      "#main-content-area > div:nth-child(5) > div.container > div.content.active > table";
+    const tbody = `${table} > tbody`;
+    let pagination = await AnyVan.locator(
+      `${table} + .pagination li.page.last.active`
+    ).getAttribute("data-page");
 
-  const book = await AnyVan.locator('div[data-name="listing-book-now"]');
-  const bookContent = await book.locator(".row");
-  const rows = await bookContent.count();
+    const pages = Number(pagination);
+    for (let page = 0; page <= pages; page++) {
+      let next;
+      try {
+        next = AnyVan.locator(`${table} + .pagination li.page.next.active`);
+      } catch {
+        break;
+      }
 
-  for (let rowIndex = 0; rowIndex < rows; rowIndex++) {
-    const row = await bookContent.nth(rowIndex);
-    const label = await row.locator('td[data-name="listing_label"]');
-    const anchor = await label.locator("a");
-    const link = await anchor.getAttribute("href");
-    const title = await anchor
-      .locator("span:not(.listing_is_fullpayment)")
-      .textContent();
-    let fullPayment;
-    try {
-      await anchor.locator(".listing_is_fullpayment");
-      fullPayment = true;
-    } catch (e) {
-      fullPayment = false;
+      if (page != 0) {
+        await next.click();
+        await AnyVan.waitForTimeout(5000);
+      }
+
+      const bookContent = AnyVan.locator(`${tbody} .row`);
+      const rows = await bookContent.count();
+
+      for (let rowIndex = 1; rowIndex <= rows; rowIndex++) {
+        const row = `${tbody} tr:nth-child(${rowIndex})`;
+        const label = `${row} > td[data-name="listing_label"]`;
+        const anchor = AnyVan.locator(`${label} > a`);
+        const title = await AnyVan.textContent(
+          `${label} > a > span:first-child`
+        );
+
+        if (title in oldData) {
+          console.log("Not new: ", title);
+          continue;
+        }
+
+        const imgTag = AnyVan.locator(
+          `${row} > td[data-name="virtual_thumbnail_url"] > img`
+        );
+        const image = await imgTag.getAttribute("src");
+        const link = "https://anyvan.com" + (await anchor.getAttribute("href"));
+        const distance = await AnyVan.textContent(
+          `${row} > td[data-name="listing_distance"]`
+        );
+        const from = {
+          town: await AnyVan.textContent(
+            `${row} > td[data-name="listing_pickup_address"] > .town`
+          ),
+          region: await AnyVan.textContent(
+            `${row} > td[data-name="listing_pickup_address"] > .region`
+          ),
+          postcode: await AnyVan.textContent(
+            `${row} > td[data-name="listing_pickup_address"] > .postcode`
+          ),
+        };
+        const to = {
+          town: await AnyVan.textContent(
+            `${row} > td[data-name="listing_delivery_address"] > .town`
+          ),
+          region: await AnyVan.textContent(
+            `${row} > td[data-name="listing_delivery_address"] > .region`
+          ),
+          postcode: await AnyVan.textContent(
+            `${row} > td[data-name="listing_delivery_address"] > .postcode`
+          ),
+        };
+        const pickupDate = await AnyVan.textContent(
+          `${row} > td[data-name="listing_pickup_date"]`
+        );
+        const price = await AnyVan.textContent(
+          `${row} > td[data-name="book_now_price"]`
+        );
+
+        let headers = {
+          "Content-Type": "aplication/json",
+          body: JSON.stringify({
+            title: title,
+            launch: link,
+            msg: `For ${price}, from ${from.town} ${from.region} ${
+              from.postcode
+            }, to ${to.town} ${to.region} ${
+              to.postcode
+            }\nPickup Date: ${pickupDate.toLocaleLowerCase()}, Distance: ${distance}`,
+          }),
+          method: "POST",
+        };
+
+        fetch("http://127.0.0.1:1000/", headers)
+          .then((res) => res)
+          .then((response) => console.log(response))
+          .catch((err) => console.log(err));
+
+        console.log("New: ", title);
+
+        oldData[title] = {
+          title: title,
+          img: image,
+          link: link,
+          distance: distance,
+          from: from,
+          to: to,
+          pickupDate: pickupDate,
+          price: price,
+        };
+      }
     }
-    const from = await row
-      .locator('td[data-name="listing_pickup_address"]')
-      .textContent();
-    const to = await row
-      .locator('td[data-name="listing_delivery_address"]')
-      .textContent();
-    const pickupDate = await row
-      .locator('td[data-name="listing_pickup_date"]')
-      .textContent();
-    const price = await row
-      .locator('td[data-name="book_now_price"]')
-      .textContent();
-
-    oldData[title] = {
-      link: link,
-      from: from,
-      to: to,
-      pickupDate: pickupDate,
-      price: price,
-    };
+    await write(oldData);
+    await AnyVan.waitForTimeout(300000);
   }
 
-  await write(oldData);
   await chrome.close();
+  fetch("http://127.0.0.1:1000/closeScraper", { method: "POST" });
+}
+
+(async () => {
+  await viewForNew();
 })();

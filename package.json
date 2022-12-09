@@ -9,5 +9,11 @@
   "license": "ISC",
   "devDependencies": {
     "@playwright/test": "^1.28.1"
+  },
+  "dependencies": {
+    "i": "^0.3.7",
+    "node-notifier": "^10.0.1",
+    "open": "^8.4.0",
+    "pkg": "^5.8.0"
   }
 }
